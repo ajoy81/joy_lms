@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: transparent;
+      overflow: hidden;
+    }
+    #player {
+      width: 100%;
+      height: 400px;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+  <div id="player"></div>
+
+  <script>
+    let player;
+    let videoId = null;
+    let maxTimeReached = 0;
+    let duration = 0;
+    let totalPlayTime = 0;
+    let lastTime = 0;
+    let playTimeInterval = null;
+    let hasSentCompleted = false;
+
+    // Send data back to Streamlit
+    function sendProgress(isCompleted = false) {
+      if (!player || !duration) return;
+      
+      const currentTime = player.getCurrentTime();
+      if (currentTime > maxTimeReached) {
+        maxTimeReached = currentTime;
+      }
+      
+      const watchPercentage = Math.min((maxTimeReached / duration) * 100, 100);
+      
+      window.parent.postMessage({
+        type: "streamlit:setComponentValue",
+        value: {
+          watch_percentage: watchPercentage,
+          time_spent_seconds: totalPlayTime,
+          is_completed: isCompleted || (watchPercentage >= 95)
+        }
+      }, "*");
+    }
+
+    // Set frame height
+    window.parent.postMessage({
+      type: "streamlit:setFrameHeight",
+      height: 410
+    }, "*");
+
+    // Load YouTube API script
+    const tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    const firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+    // Initialize player when script loads
+    function onYouTubeIframeAPIReady() {
+      if (videoId) {
+        createPlayer(videoId);
+      }
+    }
+
+    function createPlayer(vId) {
+      if (player) {
+        try {
+          player.destroy();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      player = new YT.Player('player', {
+        height: '400',
+        width: '100%',
+        videoId: vId,
+        playerVars: {
+          'rel': 0,
+          'modestbranding': 1,
+          'playsinline': 1
+        },
+        events: {
+          'onReady': onPlayerReady,
+          'onStateChange': onPlayerStateChange
+        }
+      });
+    }
+
+    function onPlayerReady(event) {
+      duration = player.getDuration();
+    }
+
+    function onPlayerStateChange(event) {
+      if (event.data === YT.PlayerState.PLAYING) {
+        duration = player.getDuration();
+        lastTime = Date.now();
+        if (playTimeInterval) clearInterval(playTimeInterval);
+        playTimeInterval = setInterval(() => {
+          const now = Date.now();
+          totalPlayTime += Math.round((now - lastTime) / 1000);
+          lastTime = now;
+          sendProgress();
+        }, 1000);
+      } else {
+        if (playTimeInterval) {
+          clearInterval(playTimeInterval);
+          playTimeInterval = null;
+          const now = Date.now();
+          totalPlayTime += Math.round((now - lastTime) / 1000);
+          lastTime = now;
+        }
+        const isEnded = event.data === YT.PlayerState.ENDED;
+        sendProgress(isEnded);
+      }
+    }
+
+    // Listen to Streamlit render events
+    window.addEventListener("message", function(event) {
+      if (event.data.type === "streamlit:render") {
+        const args = event.data.args;
+        if (args.videoId && args.videoId !== videoId) {
+          videoId = args.videoId;
+          maxTimeReached = 0;
+          totalPlayTime = 0;
+          hasSentCompleted = false;
+          if (typeof YT !== 'undefined' && YT.Player) {
+            createPlayer(videoId);
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>

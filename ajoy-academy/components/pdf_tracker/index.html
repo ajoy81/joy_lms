@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: transparent;
+      font-family: sans-serif;
+      overflow: hidden;
+    }
+    #container {
+      width: 100%;
+      height: 550px;
+      overflow-y: scroll;
+      border: 2px solid #E0E0E0;
+      border-radius: 10px;
+      box-sizing: border-box;
+      background: #FFFFFF;
+      position: relative;
+    }
+    #content-hint {
+      position: sticky;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: #FF6B6B;
+      color: white;
+      padding: 10px;
+      font-weight: bold;
+      text-align: center;
+      z-index: 10;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      border-top-left-radius: 8px;
+      border-top-right-radius: 8px;
+    }
+    /* Embed element holding the PDF. Set a large height to allow scrolling container. */
+    #pdf-embed {
+      width: 100%;
+      height: 1200px;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="content-hint">
+      📖 Scroll down to read and complete this worksheet!
+    </div>
+    <iframe id="pdf-embed" src=""></iframe>
+  </div>
+
+  <script>
+    const container = document.getElementById('container');
+    const pdfEmbed = document.getElementById('pdf-embed');
+    let pdfUrl = "";
+    let maxScroll = 0;
+
+    // Set Streamlit component frame height
+    window.parent.postMessage({
+      type: "streamlit:setFrameHeight",
+      height: 570
+    }, "*");
+
+    function sendProgress(scrollPercent, isCompleted) {
+      window.parent.postMessage({
+        type: "streamlit:setComponentValue",
+        value: {
+          scroll_percentage: scrollPercent,
+          is_completed: isCompleted
+        }
+      }, "*");
+    }
+
+    container.addEventListener('scroll', function() {
+      const scrollHeight = container.scrollHeight - container.clientHeight;
+      if (scrollHeight <= 0) return;
+      
+      const scrollPercent = (container.scrollTop / scrollHeight) * 100;
+      if (scrollPercent > maxScroll) {
+        maxScroll = scrollPercent;
+      }
+      
+      const isCompleted = maxScroll >= 90; // Scrolled 90%+ is complete
+      sendProgress(maxScroll, isCompleted);
+    });
+
+    window.addEventListener("message", function(event) {
+      if (event.data.type === "streamlit:render") {
+        const args = event.data.args;
+        if (args.pdfUrl && args.pdfUrl !== pdfUrl) {
+          pdfUrl = args.pdfUrl;
+          pdfEmbed.src = pdfUrl;
+          maxScroll = 0;
+          container.scrollTop = 0;
+          sendProgress(0, false);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
